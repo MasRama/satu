@@ -43,9 +43,9 @@ npx knex migrate:latest
 
 4. **Start the bot**
 ```bash
-npm run start
+npm run dev
 # or
-yarn start
+yarn dev
 ```
 
 5. **Scan QR Code**
