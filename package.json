@@ -2,12 +2,12 @@
   "name": "satu",
   "version": "1.0.0",
   "description": "WhatsApp Bot named Satu",
-  "main": "src/index.ts",
+  "main": "index.ts",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "repl": "tsx src/repl.ts"
+    "repl": "tsx repl.ts"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
