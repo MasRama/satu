@@ -12,15 +12,18 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.5.0",
+    "better-queue": "^3.8.12",
     "better-sqlite3": "^8.7.0",
     "chalk": "^4.1.2",
     "dayjs": "^1.11.9",
     "knex": "^2.5.1",
+    "limiter": "^2.1.0",
     "pino": "^8.15.0",
     "qrcode": "^1.5.3",
     "tsx": "^3.12.7"
   },
   "devDependencies": {
+    "@types/better-queue": "^3.8.4",
     "@types/node": "^20.5.0",
     "@types/qrcode": "^1.5.1",
     "ts-node": "^10.9.2",

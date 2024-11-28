@@ -12,6 +12,15 @@ import QRCode from 'qrcode';
 import { handleCommand, loadCommands, registerCommands } from '../commands';
 import { logger } from '../utils/logger';
 import db from './Database';
+import { RateLimiter } from 'limiter';
+import Queue from 'better-queue';
+import { performance } from 'perf_hooks';
+
+interface MessageQueueItem {
+    to: string;
+    content: any;
+    retries?: number;
+}
 
 class WhatsApp {
     public qr_string: string = "";
@@ -20,8 +29,63 @@ class WhatsApp {
     public status: 'disconnected' | 'connecting' | 'connected' | 'qr' = 'disconnected';
     private retryCount: number = 0;
     private maxRetries: number = 3;
+    private messageQueue: Queue<MessageQueueItem>;
+    private rateLimiter: RateLimiter;
+    private metrics = {
+        messagesSent: 0,
+        messagesReceived: 0,
+        errors: 0,
+        lastError: null as Error | null,
+        avgResponseTime: 0,
+        totalResponseTime: 0
+    };
+    private lastMessageTime: Map<string, number> = new Map();
+    private readonly MIN_GROUP_INTERVAL = 3000; // 3 seconds minimum between messages to same group
 
     constructor() {
+        // Rate limit: 5 messages per second (more conservative)
+        this.rateLimiter = new RateLimiter({
+            tokensPerInterval: 5,
+            interval: 1000
+        });
+
+        // Initialize message queue with safety limits
+        this.messageQueue = new Queue(async (task: MessageQueueItem, cb) => {
+            try {
+                // Check group message interval
+                const now = Date.now();
+                const lastTime = this.lastMessageTime.get(task.to) || 0;
+                if (now - lastTime < this.MIN_GROUP_INTERVAL) {
+                    await new Promise(resolve => setTimeout(resolve, this.MIN_GROUP_INTERVAL - (now - lastTime)));
+                }
+
+                await this.rateLimiter.removeTokens(1);
+                await this._sendMessage(task.to, task.content);
+                this.lastMessageTime.set(task.to, Date.now());
+                cb(null, true);
+            } catch (error) {
+                const maxRetries = 3;
+                if (!task.retries) task.retries = 0;
+                
+                if (task.retries < maxRetries) {
+                    task.retries++;
+                    setTimeout(() => {
+                        this.messageQueue.push(task);
+                    }, 2000 * (task.retries)); // Exponential backoff
+                    cb(null, false);
+                } else {
+                    logger.error(`Failed to send message after ${maxRetries} retries:`, error);
+                    cb(error);
+                }
+            }
+        }, {
+            concurrent: 3, // Reduced concurrent processing
+            maxRetries: 3,
+            retryDelay: 2000,
+            maxTimeout: 10000,
+            maxSize: 5000 // Maximum queue size
+        } as any);
+
         this.initialize();
     }
 
@@ -113,6 +177,7 @@ class WhatsApp {
                         if (!msg.key.fromMe) {
                             logger.message(msg);
                             await handleCommand(msg);
+                            this.metrics.messagesReceived++;
                         }
                     }
                 }
@@ -125,24 +190,50 @@ class WhatsApp {
         }
     }
 
+    private async _sendMessage(to: string, content: any) {
+        const start = performance.now();
+        try {
+            await this.client.sendMessage(to, content);
+            this.metrics.messagesSent++;
+            
+            const responseTime = performance.now() - start;
+            this.metrics.totalResponseTime += responseTime;
+            this.metrics.avgResponseTime = this.metrics.totalResponseTime / this.metrics.messagesSent;
+            
+            logger.outgoing(to, content);
+        } catch (error) {
+            this.metrics.errors++;
+            this.metrics.lastError = error as Error;
+            throw error;
+        }
+    }
+
     public async sendMessage(to: string, content: any) {
         if (!this.ready) {
             throw new Error('WhatsApp client is not ready');
         }
 
-        try {
-            logger.outgoing(to, content);
-            await this.client.sendMessage(to, content);
-        } catch (error) {
-            logger.error('Error sending message:', error);
-            throw error;
-        }
+        return new Promise((resolve, reject) => {
+            this.messageQueue.push({ to, content }, (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+            });
+        });
     }
 
     public async reconnect() {
         if (this.status === 'disconnected') {
             await this.initialize();
         }
+    }
+
+    public getMetrics() {
+        return {
+            ...this.metrics,
+            queueSize: (this.messageQueue as any).length(),
+            status: this.status,
+            uptime: process.uptime()
+        };
     }
 }
 
