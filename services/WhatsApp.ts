@@ -31,6 +31,9 @@ class WhatsApp {
     private maxRetries: number = 3;
     private messageQueue: Queue<MessageQueueItem>;
     private rateLimiter: RateLimiter;
+    private readonly MAX_RECONNECT_ATTEMPTS = 5;
+    private readonly BACKOFF_TIMES = [1000, 2000, 5000, 10000, 30000]; // in milliseconds
+    private reconnectAttempt = 0;
     private metrics = {
         messagesSent: 0,
         messagesReceived: 0,
@@ -154,7 +157,7 @@ class WhatsApp {
                             await this.deleteSession();
                         } else {
                             logger.info(`Retry attempt ${this.retryCount}/${this.maxRetries}`);
-                            await this.initialize();
+                            await this.reconnectWithBackoff();
                         }
                     } else {
                         // If logged out, delete session immediately
@@ -190,6 +193,35 @@ class WhatsApp {
         }
     }
 
+    private async reconnectWithBackoff(): Promise<boolean> {
+        if (this.reconnectAttempt >= this.MAX_RECONNECT_ATTEMPTS) {
+            logger.error('Max reconnection attempts reached. Please check your connection or credentials.');
+            this.status = 'disconnected';
+            return false;
+        }
+
+        const delay = this.BACKOFF_TIMES[this.reconnectAttempt] || this.BACKOFF_TIMES[this.BACKOFF_TIMES.length - 1];
+        logger.info(`Attempting to reconnect (attempt ${this.reconnectAttempt + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+        
+        try {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            this.reconnectAttempt++;
+            await this.initialize();
+            this.reconnectAttempt = 0; // Reset on successful reconnection
+            return true;
+        } catch (error) {
+            logger.error('Reconnection failed:', error);
+            return false;
+        }
+    }
+
+    public async reconnect() {
+        if (this.status === 'disconnected') {
+            return this.reconnectWithBackoff();
+        }
+        return false;
+    }
+
     private async _sendMessage(to: string, content: any) {
         const start = performance.now();
         try {
@@ -219,12 +251,6 @@ class WhatsApp {
                 else resolve(result);
             });
         });
-    }
-
-    public async reconnect() {
-        if (this.status === 'disconnected') {
-            await this.initialize();
-        }
     }
 
     public getMetrics() {
