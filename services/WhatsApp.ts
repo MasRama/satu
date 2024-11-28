@@ -11,15 +11,32 @@ import P from 'pino';
 import QRCode from 'qrcode';
 import { handleCommand, loadCommands, registerCommands } from '../commands';
 import { logger } from '../utils/logger';
+import db from './Database';
 
 class WhatsApp {
     public qr_string: string = "";
     public client: any;
     public ready: boolean = false;
     public status: 'disconnected' | 'connecting' | 'connected' | 'qr' = 'disconnected';
+    private retryCount: number = 0;
+    private maxRetries: number = 3;
 
     constructor() {
         this.initialize();
+    }
+
+    private async deleteSession() {
+        try {
+            // Hapus sesi langsung dari database
+            await db.from("bailey_auths").where("id", 'creds.json').delete();
+            logger.info('Session deleted successfully');
+            this.retryCount = 0;
+            this.ready = false;
+            // Reinitialize after deleting session
+            await this.initialize();
+        } catch (error) {
+            logger.error('Error deleting session:', error);
+        }
     }
 
     private async initialize() {
@@ -27,7 +44,7 @@ class WhatsApp {
             const { version, isLatest } = await fetchLatestBaileysVersion();
             logger.info(`Using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
-            const { state, saveCreds } = await BaileyAuth();
+            const { state, saveCreds, removeData } = await BaileyAuth();
 
             this.client = makeWASocket({
                 version,
@@ -60,12 +77,25 @@ class WhatsApp {
 
                 if (connection === 'close') {
                     this.status = 'disconnected';
-                    const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+                    const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                    
                     logger.error('Connection closed', lastDisconnect?.error);
                     logger.info(`Reconnecting: ${shouldReconnect}`);
                     
                     if (shouldReconnect) {
-                        await this.initialize();
+                        this.retryCount++;
+                        if (this.retryCount >= this.maxRetries) {
+                            logger.info(`Max retries (${this.maxRetries}) reached. Deleting session...`);
+                            await this.deleteSession();
+                        } else {
+                            logger.info(`Retry attempt ${this.retryCount}/${this.maxRetries}`);
+                            await this.initialize();
+                        }
+                    } else {
+                        // If logged out, delete session immediately
+                        logger.info('Logged out. Deleting session...');
+                        await this.deleteSession();
                     }
                 } else if (connection === 'connecting') {
                     this.status = 'connecting';

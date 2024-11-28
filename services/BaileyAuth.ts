@@ -1,7 +1,11 @@
 import { initAuthCreds, BufferJSON, AuthenticationCreds, AuthenticationState, SignalDataTypeMap, proto } from "@whiskeysockets/baileys";
 import db from './Database';
 
-export const BaileyAuth = async (): Promise<{ state: AuthenticationState, saveCreds: () => Promise<void> }> => {
+export const BaileyAuth = async (): Promise<{ 
+    state: AuthenticationState, 
+    saveCreds: () => Promise<void>,
+    removeData: (id: string) => Promise<void>
+}> => {
     const writeData = async (data: any, id: string) => {
         const check = await db.from("bailey_auths").where("id", id).select("id").first();
 
@@ -71,6 +75,7 @@ export const BaileyAuth = async (): Promise<{ state: AuthenticationState, saveCr
         },
         saveCreds: () => {
             return writeData(creds, 'creds.json');
-        }
+        },
+        removeData
     };
 };
