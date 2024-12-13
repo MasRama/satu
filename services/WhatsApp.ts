@@ -5,7 +5,7 @@ import makeWASocket, {
     isJidBroadcast,
     WAMessageKey,
     proto
-} from '@whiskeysockets/baileys';
+} from '@masrama/baileys';
 import { BaileyAuth } from './BaileyAuth';
 import P from 'pino';
 import QRCode from 'qrcode';
