@@ -1,4 +1,4 @@
-import { initAuthCreds, BufferJSON, AuthenticationCreds, AuthenticationState, SignalDataTypeMap, proto } from "@masrama/baileys";
+import { initAuthCreds, BufferJSON, AuthenticationCreds, AuthenticationState, SignalDataTypeMap, proto } from "@whiskeysockets/baileys";
 import db from './Database';
 
 export const BaileyAuth = async (): Promise<{ 

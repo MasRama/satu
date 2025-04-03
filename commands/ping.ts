@@ -8,18 +8,8 @@ export const ping: Command = {
         const chat = msg.key.remoteJid;
         if (!chat) return;
 
-        const sections = [{
-            title: "Section 1",
-            rows: [
-                {title: "Option 1", rowId: "option1"},
-                {title: "Option 2", rowId: "option2"}
-            ]
-        }]
-
         await WhatsApp.client.sendMessage(chat, {
-            text: "Here's your list",
-            buttonText: "Click Me!",
-            sections: sections
+            text: "Here's your list"
         });
 
         // Alternative simple response:
